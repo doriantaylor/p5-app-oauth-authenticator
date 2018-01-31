@@ -1,24 +1,15 @@
 NAME
-    App::OAuth::Authenticator - The great new App::OAuth::Authenticator!
+    App::OAuth::Authenticator - A (standalone) OAuth(2) authenticator
 
 VERSION
     Version 0.01
 
 SYNOPSIS
-    Quick summary of what the module does.
+      # on the shell
 
-    Perhaps a little code snippet.
+      $ plackup `which app-oauth-authenticator.psgi`
 
-        use App::OAuth::Authenticator;
-
-        my $foo = App::OAuth::Authenticator->new();
-        ...
-
-EXPORT
-    A list of functions that can be exported. You can delete this section if
-    you don't export anything, such as for a purely object-oriented module.
-
-SUBROUTINES/METHODS
+METHODS
   function1
   function2
 AUTHOR
@@ -26,22 +17,14 @@ AUTHOR
 
 BUGS
     Please report any bugs or feature requests to
-    "bug-app-oauth-authenticator at rt.cpan.org", or through the web
-    interface at
-    <http://rt.cpan.org/NoAuth/ReportBug.html?Queue=App-OAuth-Authenticator>
-    . I will be notified, and then you'll automatically be notified of
-    progress on your bug as I make changes.
+    <https://github.com/doriantaylor/p5-app-oauth-authenticator/issues> .
 
 SUPPORT
     You can find documentation for this module with the perldoc command.
 
-        perldoc App::OAuth::Authenticator
+      perldoc App::OAuth::Authenticator
 
     You can also look for information at:
-
-    *   RT: CPAN's request tracker (report bugs here)
-
-        <http://rt.cpan.org/NoAuth/Bugs.html?Dist=App-OAuth-Authenticator>
 
     *   AnnoCPAN: Annotated CPAN documentation
 
@@ -55,15 +38,12 @@ SUPPORT
 
         <http://search.cpan.org/dist/App-OAuth-Authenticator/>
 
-ACKNOWLEDGEMENTS
 LICENSE AND COPYRIGHT
     Copyright 2018 Dorian Taylor.
 
     Licensed under the Apache License, Version 2.0 (the "License"); you may
     not use this file except in compliance with the License. You may obtain
-    a copy of the License at
-
-        L<http://www.apache.org/licenses/LICENSE-2.0>
+    a copy of the License at <http://www.apache.org/licenses/LICENSE-2.0>.
 
     Unless required by applicable law or agreed to in writing, software
     distributed under the License is distributed on an "AS IS" BASIS,

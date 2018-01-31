@@ -43,6 +43,8 @@ our $VERSION = '0.01';
 # location like the other resources. It is run through a side channel
 # and hooked via the FCGI_ROLE environment variable.
 
+# ***
+
 # Next: A NASCAR-esque list of all the providers:
 
 # This is really the only UI: a bunch of links to the different
@@ -50,6 +52,8 @@ our $VERSION = '0.01';
 # only the provider (when the provider redirects the UA back to the
 # confirmation target), but also the original resource the UA was
 # coming from. (The latter should be checked for cleanliness.)
+
+# ***
 
 # Finally: The confirmation/validation target:
 
@@ -97,6 +101,17 @@ our $VERSION = '0.01';
 # provider. (We can include a parameter to discount the providers
 # which have been exhausted.)
 
+# The validation function should return the matching principal(s) if
+# successful, `undef` if no principal was found, and raise an
+# exception in all other cases. Exceptions should contain details
+# about the nature of the failure, in particular whether they are
+# temporary or permanent. In the case of multiple principals
+# identified, consider a `300 Multiple Choices` response, `406 Not
+# Acceptable`, or `409 Conflict`. (This will be a policy issue whether
+# or not to let the OAuth-authenticated user specify who they are.) If
+# the API calls fail, appropriate response codes are `502 Bad Gateway`,
+# `503 Service Unavailable`, or `504 Gateway Timeout`.
+
 # An option to consider is to use the provider to gather intel on
 # other members of the whitelist to fill in data gaps and facilitate
 # matching. For example, both GitHub and Slack have 'organizations'
@@ -106,8 +121,6 @@ our $VERSION = '0.01';
 # more API privileges than are needed to simply identify the
 # principal, so we would need some explicit UI and content to
 # carefully explain what the hell is going on.
-
-
 
 sub function1 {
 }
