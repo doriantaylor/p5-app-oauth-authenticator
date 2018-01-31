@@ -1,0 +1,15 @@
+# the (RDF) store
+<store>
+</store>
+
+# the (SQL) state database
+<state>
+  dsn dbi:Pg:dbname=oauth
+</state>
+
+# the list of OAuth providers
+<provider>
+  name   GitHub
+  id     $CLIENT_ID
+  secret $CLIENT_SECRET
+</provider>

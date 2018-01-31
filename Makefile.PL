@@ -30,13 +30,21 @@ build_requires (
 );
 
 requires (
-    'Moo'               => '2.003',
-    'Role::Markup::XML' => '0.07',
-    'DBIx::Class'       => '0.082821',
-    'RDF::Trine'        => '1.018',
-    'Net::OAuth'        => '0.28',
-    'Net::OAuth2'       => '0.63',
-    'Plack::Request'    => '1.0037',
+    'Moo'                   => '2.003',
+    'URI'                   => '1.69',
+    'URI::QueryParam'       => '1.69',
+    'JSON'                  => '2.90',
+    'MIME::Base64'          => '3.14',
+    'UUID::Tiny'            => '1.04',
+    'Role::Markup::XML'     => '0.07',
+    'DBIx::Class'           => '0.082821',
+    'RDF::Trine'            => '1.018',
+    'Net::OAuth'            => '0.28',
+    'Net::OAuth2'           => '0.63',
+    'Plack::Request'        => '1.0037',
+    'Config::Any'           => '0.26',
+    'String::RewritePrefix' => '0.007',
+    'Class::Load'           => '0.23',
 );
 
 install_as_cpan;
