@@ -4,6 +4,17 @@ use 5.012;
 use strict;
 use warnings FATAL => 'all';
 
+use parent 'Plack::Component';
+
+use Try::Tiny;
+use Throwable::Error;
+
+use String::RewritePrefix ();
+use Class::Load           ();
+
+use Moo;
+with 'Role::Markup::XML';
+
 =head1 NAME
 
 App::OAuth::Authenticator - A (standalone) OAuth(2) authenticator
@@ -24,9 +35,115 @@ our $VERSION = '0.01';
 
 =head1 METHODS
 
-=head2 function1
+=head2 new
+
+Loads the internal state and bootstraps
+
+=over 4
+
+=item provider
 
 =cut
+
+has provider => (
+    is     => 'ro',
+    coerce => sub {
+        # this thing is allowed to be an arrayref or a hashref.
+        # if it's anything else it is an error.
+
+        # the members themselves are either hashrefs or they have to
+        # `do` the role App::OAuth::Authenticator::Provider.
+        $_[0];
+    },
+);
+
+=item model
+
+The RDF model containing the reference structure for authenticating
+and authorizing users.
+
+=cut
+
+has model => (
+    is => 'rwp',
+);
+
+=item state
+
+The state database that contains the various API keys, cookies, etc.
+
+=cut
+
+has state => (
+    is => 'rwp',
+);
+
+=item session_key
+
+=cut
+
+has session_key => (
+    is      => 'ro',
+    default => 'auth-token', # not an OAuth toekn. will this be confusing?
+);
+
+sub BUILD {
+}
+
+=head2 configure $FILE
+
+This class method loads the state from a configuration file. Useful
+for formulations like:
+
+  $ plackup -MApp::OAuth::Authenticator -e \
+    'App::OAuth::Authenticator->configure("my.conf")->to_app'
+
+=cut
+
+sub configure {
+    my ($class, $file) = @_;
+    $class = ref $class if ref $class;
+
+    my %cfg;
+    try {
+        require Config::Any;
+        my $tmp = Config::Any->load_files
+            ({ files => [$file], flatten_to_hash => 1, use_ext => 1 });
+        # just smush this
+        %cfg = map { %$_ } values %$tmp;
+    } catch {
+        Throwable::Error->throw("Must supply a valid file: $_");
+    };
+
+    $class->new(%cfg);
+}
+
+=head2 call
+
+=cut
+
+sub call {
+    my ($self, $req) = @_;
+
+    # the FCGI_ROLE is a misnomer; the authenticator authenticates.
+    return $self->authenticator($req) if $req->env->{FCGI_ROLE} eq 'AUTHORIZER';
+}
+
+around call => sub {
+    my ($orig, $self, $env) = @_;
+    my $req  = Plack::Request->new($env);
+    my $resp = $orig->($self, $req);
+
+
+    my $body = $resp->body;
+    if (defined $body and ref $body and Scalar::Util::blessed($body)
+            and $body->isa('XML::LibXML::Node')) {
+        $resp->content_type('application/xml');
+        $resp->body($body->toString(1));
+    }
+
+    $resp->finalize;
+};
 
 # We start and end with the authenticator:
 
@@ -43,15 +160,41 @@ our $VERSION = '0.01';
 # location like the other resources. It is run through a side channel
 # and hooked via the FCGI_ROLE environment variable.
 
+sub authenticator {
+    my ($self, $req) = @_;
+}
+
 # ***
 
-# Next: A NASCAR-esque list of all the providers:
+# Next: A NASCAR-esque menu of all the providers:
 
 # This is really the only UI: a bunch of links to the different
 # providers. Each link must contain enough information to resolve not
 # only the provider (when the provider redirects the UA back to the
 # confirmation target), but also the original resource the UA was
 # coming from. (The latter should be checked for cleanliness.)
+
+sub menu {
+    my ($self, $req) = @_;
+
+    # since this resource is probably what we're going to see if the
+    # login process fails, we should consider some lozenge or other
+    # for delivering an error message.
+
+    # iterate over the providers to produce a list
+    for my $provider (keys %{$self->provider}) {
+        # all we need from the provider here is a URI
+
+        # the provider should already know its own state and scope;
+        # all it needs from us is the URI of the validation target.
+
+        # other than that all we are doing here is creating a link so
+        # maybe there should be some kind of label in the config.
+    }
+
+    # punt out a page which is literally just a list of links and
+    # maybe an error message at the top
+}
 
 # ***
 
@@ -122,14 +265,78 @@ our $VERSION = '0.01';
 # principal, so we would need some explicit UI and content to
 # carefully explain what the hell is going on.
 
-sub function1 {
+sub validate {
+    my ($self, $req) = @_;
+
+    my $uri  = $req->uri;
+    my $resp = $req->new_response(409);
+
+    # we are using the `state` parameter to identify what the hell
+    # provider we're using, so if we don't have that, this is a 409
+    # right out of the gate. (may as well check for the existence of
+    # `code` parameter here too.)
+
+    # resolve the provider using the `state` parameter or return 409.
+
+    my $provider;
+
+    # before we validate the user, we check the redirect target, which
+    # will be encoded as the terminal path segment using base64url.
+
+    my $target;
+
+    # * if it isn't there, this is a 409. (or is it? do we want to
+    #   have a default redirecton target?)
+    #
+    # * if it decodes to anything other than a valid (maybe relative)
+    #   HTTP(S) URL, then this is a 409.
+    #
+    # * if the URI's authority points to any domain other than the the
+    #   Host: or any configured domains, this is a 409. (we assume
+    #   here that the Host: header has already been validated upstream)
+    #
+    # *now* we feed the `code` parameter into the oauth request, which
+    # of course if we aren't given, is another 409 error.
+
+    my $principal;
+    try {
+        # the call to the provider will either return the principal,
+        # return nothing, or throw an exception.
+
+
+        $principal = $provider->resolve_principal(token => $token);
+    } catch {
+        # the provider has failed in some technical way; return 5xx
+    };
+
+    unless ($principal) {
+        # 403, we see you but you aren't on the whitelist
+
+        # here's a question: do we want to let people try another
+        # provider?
+    }
+
+    # congratulations, you're in. mint up a new state record, set the
+    # cookie and redirect to the target.
+    my $cookie = $self->state->state_for($principal);
+
+    $resp->cookies->{$self->session_key} = {
+        value    => $cookie,
+        httponly => 1,
+        domain   => $derp,
+    };
+
+    $resp->redirect($target, 303);
+
+    $resp;
 }
 
-=head2 function2
+=head2 
 
-=cut
+sub state_for {
+}
 
-sub function2 {
+sub principal_for {
 }
 
 =head1 AUTHOR

@@ -16,7 +16,7 @@ CREATE TABLE provider_state (
   provider  varchar(255)                not null,
   userid    varchar(255)                not null,
   created   timestamp without time zone not null default now(),
-  expires   timestamp without time zone not null default now(),
+  expires   timestamp without time zone not null default 'infinity'::timestamp,
   token     text                        not null,
   constraint pk_provider_state primary key (principal, provider),
   constraint uq_provider_state unique (provider, userid),
@@ -32,7 +32,7 @@ CREATE TABLE principal_state (
   id        uuid                        not null,
   principal text                        not null,
   created   timestamp without time zone not null default now(),
-  expires   timestamp without time zone not null default now(),
+  expires   timestamp without time zone not null default 'infinity'::timestamp,
   constraint pk_principal_state primary key (id),
   constraint uq_principal_state unique (principal),
   constraint fk_principal_state foreign key (principal)

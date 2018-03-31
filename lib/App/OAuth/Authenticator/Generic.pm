@@ -1,5 +1,8 @@
 package App::OAuth::Authenticator::Generic;
 
+use strict;
+use warnings FATAL => 'all';
+
 =head1 NAME
 
 App::OAuth::Authenticator::Generic - Role common to OAuth 1 and 2
@@ -7,6 +10,8 @@ App::OAuth::Authenticator::Generic - Role common to OAuth 1 and 2
 =cut
 
 use Moo::Role;
+
+requires qw(auth_uri token_uri scope ua);
 
 =head1 ACCESSORS
 

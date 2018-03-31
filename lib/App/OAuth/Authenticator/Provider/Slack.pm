@@ -1,9 +1,11 @@
 package App::OAuth::Authenticator::Provider::Slack;
 
+use strict;
+use warnings FATAL => 'all';
+
 use Moo;
 
-extends 'App::OAuth::Authenticator::Provider';
-
+with 'App::OAuth::Authenticator::Provider';
 with 'App::OAuth::Authenticator::OAuth2';
 
 
