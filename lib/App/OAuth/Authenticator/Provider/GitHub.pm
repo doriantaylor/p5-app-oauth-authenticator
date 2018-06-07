@@ -20,7 +20,8 @@ The authentication endpoint for the provider.
 has auth_uri => (
     is       => 'ro',
     #init_arg => undef,
-    default  => sub {},
+    coerce   => sub { URI->new($_[0]) if $_[0] },
+    default  => sub { URI->new('https://github.com/login/oauth/authorize') },
 );
 
 =head2 token_uri
@@ -32,7 +33,8 @@ The token endpoint for the provider.
 has token_uri => (
     is       => 'ro',
     #init_arg => undef,
-    default  => sub {},
+    coerce   => sub { URI->new($_[0]) if $_[0] },
+    default  => sub { URI->new('https://github.com/login/oauth/access_token') },
 );
 
 =head2 scope
@@ -43,8 +45,8 @@ Authorization scopes to request for this provider.
 
 has scope => (
     is       => 'ro',
-    #init_arg => undef,
-    default  => sub {},
+    coerce   => sub { my $x = shift; ref $x ? $x : [split /\s+/, $x] if $x },
+    default  => sub {[qw(read:user read:org user:email)]},
 );
 
 # consume the roles after we define these attributes since `has` is a
@@ -59,10 +61,12 @@ successful, update the entry in the state database.
 May croak if there is a failure in the interaction with the provider's
 API.
 
+This method is intended to be called from the confirmation/validation target.
+
 =cut
 
 sub resolve_principal {
-    my ($self, $token) = @_;
+    my ($self, $token, $rules) = @_;
 
     # obtain a session with the token
     my $session = $self->get_session(token => $token);
@@ -89,23 +93,65 @@ sub resolve_principal {
     $principal;
 }
 
-# match user
+# try to get a principal out of the github user
+
+# first let's see if the damn account is in the graph
+
+# ?s (foaf:account|^sioc:account_of) ?account .
+
+# no? okay let's try email (only those verified by github)
+
+# ?s foaf:mbox ?verified .
+
+# no? how about indirectly
+
+# ?s (foaf:account|^sioc:account_of)/sioc:email ?verified .
+
+# no? how about if the github page itself is listed in some way
+
+# ?s ?p ?html_url .
+
+# still no? how about matching on the 'blog' entry?
+
+# ?s (foaf:page|foaf:homepage|foaf:weblog) ?blog .
+
+# still no? how about the name i guess
+
+# ?s (foaf:name|foaf:nickname) ?n . FILTER (UCASE(str(?n)) = UCASE(?nick))
+
+# those are really the only handles we have for matching people to accounts
 
 
-# by email (verified by github),
+# if we don't have the account in the graph, we should probably add it
 
-# ?s foaf:mbox ?verified
+# whether or not we add a new person though? ...
 
-# and by membership to org
+
+# anyway, once we have the principal, we need to check that it is a
+# member of the organization:
 
 # either  ?s org:memberOf|org:headOf|^org:hasMember|^foaf:member ?org .
 # or      ?s (^org:membership|org:member)/org:organization ?org .
-# and     ?org (org:memberOf|org:headOf|^org:hasMember|^foaf:member)* ?origin .
-# then    ?org foaf:account ?acct .
-# and     ?acct foaf:accountServiceHomepage <https://github.com/> .
-# finally ?org foaf:account ?acct
 
+# subsequently, we can test if the organization belongs to the origin
 
-# get additional intel from the provider
+# ?org (org:memberOf|org:headOf|^org:hasMember|^foaf:member)* ?origin .
+
+# so consider the 'member' verb in our own authentication lexicon: do
+# we identify by proxy as well? consider:
+
+# ?s foaf:account ?account .
+# ?account (sioc:member_of|^sioc:has_member) ?group .
+# ?group (sioc:usergroup_of|^sioc:has_usergroup) ?site .
+# ?org (org:hasSite|^org:siteOf)/org:siteAddress? ?site .
+
+# (then we match the org to the origin)
+
+# another consideration is a function that enables provider
+# administrators to import (e.g. account) data from the provider
+
+# that is going to entail a whooooooole lotta UI
+
+# ???
 
 1;

@@ -6,11 +6,17 @@ use warnings FATAL => 'all';
 
 use parent 'Plack::Component';
 
+use App::OAuth::Authenticator::Request;
+use App::OAuth::Authenticator::DBIC;
+
 use Try::Tiny;
 use Throwable::Error;
 
 use String::RewritePrefix ();
 use Class::Load           ();
+use Data::UUID::NCName    ();
+
+use RDF::Trine;
 
 use Moo;
 with 'Role::Markup::XML';
@@ -45,16 +51,49 @@ Loads the internal state and bootstraps
 
 =cut
 
-has provider => (
-    is     => 'ro',
-    coerce => sub {
-        # this thing is allowed to be an arrayref or a hashref.
-        # if it's anything else it is an error.
+sub IS ($$) {
+    my ($thing, $type) = @_;
+    defined $thing or return;
+    my $ref = ref $thing or return;
+    Scalar::Util::blessed($thing) &&
+          ($thing->isa($type) or $thing->can('does') && $thing->does($type))
+              or $ref eq $type;
+}
 
-        # the members themselves are either hashrefs or they have to
-        # `do` the role App::OAuth::Authenticator::Provider.
-        $_[0];
+has registry => (
+    is => 'ro',
+    init_arg => undef,
+    default => sub {
+        Params::Registry->new(
+            params => [
+                {
+                    name => 'state',
+                    max  => 1,
+                },
+                {
+                    name => 'action',
+                    max  => 1,
+                },
+                {
+                    name => 'target',
+                    max  => 1,
+                },
+            ],
+        );
     },
+);
+
+has provider => (
+    is      => 'ro',
+    default => sub { { } },
+    # can't coerce this because it has a backreference, not a big deal
+);
+
+# reverse map links state tokens to oauth providers
+
+has _provider_rev => (
+    is      => 'ro',
+    default => sub { { } },
 );
 
 =item model
@@ -64,8 +103,24 @@ and authorizing users.
 
 =cut
 
+has store => (
+    is      => 'ro',
+    default => sub { RDF::Trine::Store::Hexastore->new },
+    coerce  => sub {
+        my $thing = shift;
+        if (defined $thing) {
+            return $thing if IS($thing, 'RDF::Trine::Store');
+            die 'Store must be a HASH' unless ref $thing eq 'HASH';
+            return RDF::Trine::Store::Hexastore->new unless $thing->{storetype};
+            return RDF::Trine::Store->new_with_config($thing);
+        }
+    }
+);
+
 has model => (
-    is => 'rwp',
+    is       => 'ro',
+    lazy     => 1,
+    default  => sub { RDF::Trine::Model->new($_[0]->store) },
 );
 
 =item state
@@ -75,7 +130,16 @@ The state database that contains the various API keys, cookies, etc.
 =cut
 
 has state => (
-    is => 'rwp',
+    is => 'ro',
+    required => 1,
+    coerce => sub {
+        my $thing = shift;
+        return $thing if IS($thing, 'App::OAuth::Authenticator::DBIC');
+        die 'State must be a HASH' unless ref $thing eq 'HASH';
+        my %h = %$thing;
+        my ($dsn, $user, $pass) = delete @h{qw(dsn user password)};
+        App::OAuth::Authenticator::DBIC->connect($dsn, $user, $pass, \%h);
+    },
 );
 
 =item session_key
@@ -84,10 +148,34 @@ has state => (
 
 has session_key => (
     is      => 'ro',
-    default => 'auth-token', # not an OAuth toekn. will this be confusing?
+    default => 'auth-token', # not an OAuth token. will this be confusing?
 );
 
 sub BUILD {
+    my $self = shift;
+
+    # deal with providers
+    my $p = $self->provider;
+    while (my ($k, $v) = each %$p) {
+        # load unless already loaded
+        unless (IS($v, 'App::OAuth::Authenticator::Provider')) {
+
+            # get class name
+            my ($cn) = String::RewritePrefix->rewrite({
+                ''  => 'App::OAuth::Authenticator::Provider::',
+                '+' => '' }, $k);
+
+            try {
+                Class::Load::load_class($cn);
+                $p->{$k} = $v = $cn->new(label => $k, %$v, app => $self);
+            } catch {
+                die "Could not load $cn: $_";
+            };
+        }
+
+        # set the reverse value
+        $self->_provider_rev->{$v->state} = $v;
+    }
 }
 
 =head2 configure $FILE
@@ -118,33 +206,6 @@ sub configure {
     $class->new(%cfg);
 }
 
-=head2 call
-
-=cut
-
-sub call {
-    my ($self, $req) = @_;
-
-    # the FCGI_ROLE is a misnomer; the authenticator authenticates.
-    return $self->authenticator($req) if $req->env->{FCGI_ROLE} eq 'AUTHORIZER';
-}
-
-around call => sub {
-    my ($orig, $self, $env) = @_;
-    my $req  = Plack::Request->new($env);
-    my $resp = $orig->($self, $req);
-
-
-    my $body = $resp->body;
-    if (defined $body and ref $body and Scalar::Util::blessed($body)
-            and $body->isa('XML::LibXML::Node')) {
-        $resp->content_type('application/xml');
-        $resp->body($body->toString(1));
-    }
-
-    $resp->finalize;
-};
-
 # We start and end with the authenticator:
 
 # Simple conditional: if there's a cookie present with the specified
@@ -162,6 +223,8 @@ around call => sub {
 
 sub authenticator {
     my ($self, $req) = @_;
+
+    my $resp = $req->new_response(200);
 }
 
 # ***
@@ -177,12 +240,40 @@ sub authenticator {
 sub menu {
     my ($self, $req) = @_;
 
+    my $resp = $req->new_response(200);
+
     # since this resource is probably what we're going to see if the
     # login process fails, we should consider some lozenge or other
     # for delivering an error message.
 
+    my $doc  = $self->_DOC;
+    my $root = $self->_XHTML(
+        doc     => $doc,
+        uri     => $req->abs_request_uri,
+        title   => 'Choose an Authentication Provider',
+        content => [
+            { -name => 'h1', -content => 'Derp' },
+            { -name => 'ul' },
+        ],
+    );
+    $resp->body($doc);
+
+    my $confirm = $req->real_base;
+    #$confirm->path_segment
+
     # iterate over the providers to produce a list
-    for my $provider (keys %{$self->provider}) {
+    for my $provider (sort { $a->label cmp $b->label }
+                          values %{$self->provider}) {
+
+        my $href = $provider->prepare_login_uri(redirect => $confirm);
+
+        $self->_XML(
+            parent => $root,
+            spec => {
+                -name => 'li',
+                -content => { -content => $provider->label, href => $href },
+            },
+        );
         # all we need from the provider here is a URI
 
         # the provider should already know its own state and scope;
@@ -194,6 +285,8 @@ sub menu {
 
     # punt out a page which is literally just a list of links and
     # maybe an error message at the top
+
+    $resp;
 }
 
 # ***
@@ -216,6 +309,8 @@ sub menu {
 # and thus just encode our parameters into the path of the target URI.)
 
 # Example: /oauth/confirm/$PROVIDER/$REDIRECT_BASE64?oauth=params
+
+# Better: /oauth/confirm/$REDIRECT_BASE64?state=$provider&other=params
 
 # Resolution/validation of the principal can proceed once we have the
 # access token from the provider. This process will be distinct and
@@ -303,8 +398,7 @@ sub validate {
         # the call to the provider will either return the principal,
         # return nothing, or throw an exception.
 
-
-        $principal = $provider->resolve_principal(token => $token);
+        #$principal = $provider->resolve_principal(token => $token);
     } catch {
         # the provider has failed in some technical way; return 5xx
     };
@@ -323,7 +417,7 @@ sub validate {
     $resp->cookies->{$self->session_key} = {
         value    => $cookie,
         httponly => 1,
-        domain   => $derp,
+#        domain   => $derp,
     };
 
     $resp->redirect($target, 303);
@@ -331,13 +425,53 @@ sub validate {
     $resp;
 }
 
-=head2 
+=head2 some_thing
+
+=cut
 
 sub state_for {
 }
 
 sub principal_for {
 }
+
+=head2 call
+
+=cut
+
+sub call {
+    my ($self, $req) = @_;
+
+    # the FCGI_ROLE is a misnomer; the authenticator authenticates.
+    my $role = $req->env->{FCGI_ROLE} || '';
+    return $self->authenticator($req) if $role eq 'AUTHORIZER';
+
+    # dispatch based on request URI
+
+    $self->menu($req);
+}
+
+around call => sub {
+    my ($orig, $self, $env) = @_;
+    my $req  = App::OAuth::Authenticator::Request->new
+        ($env, $self->registry, path => [qw(action target)]);
+    my $ins  = $req->instance;
+
+    if (my $pi = $req->real_path_info) {
+        my ($undef, @seg) = split m!/+!, $pi;
+        if (@seg) {
+        }
+    }
+
+    # now run the original call
+    my $resp = $orig->($self, $req);
+    my $body = $resp->body;
+    if (IS($body, 'XML::LibXML::Node')) {
+        $resp->content_type('application/xml');
+        $resp->body($body->toString(1));
+    }
+    $resp->finalize;
+};
 
 =head1 AUTHOR
 

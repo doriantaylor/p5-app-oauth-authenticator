@@ -45,6 +45,11 @@ has ua => (
 # again add `with` after we're through with all the `has`
 with 'App::OAuth::Authenticator::Generic';
 
+sub _wrap_auth_uri {
+    my $self = shift;
+    $self->ua->authorize(@_);
+}
+
 =head2 get_session %PARAMS
 
 Obtain an object that is suitable for making API calls. Keys not on

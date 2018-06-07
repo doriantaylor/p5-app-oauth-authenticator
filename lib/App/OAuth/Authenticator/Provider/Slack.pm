@@ -5,9 +5,55 @@ use warnings FATAL => 'all';
 
 use Moo;
 
-with 'App::OAuth::Authenticator::Provider';
-with 'App::OAuth::Authenticator::OAuth2';
+=head2 auth_uri
 
+The authentication endpoint for the provider.
+
+=cut
+
+has auth_uri => (
+    is       => 'ro',
+    #init_arg => undef,
+    coerce   => sub { URI->new($_[0]) if $_[0] },
+    default  => sub { URI->new('https://slack.com/oauth/authorize') },
+);
+
+=head2 token_uri
+
+The token endpoint for the provider.
+
+=cut
+
+has token_uri => (
+    is       => 'ro',
+    #init_arg => undef,
+    coerce   => sub { URI->new($_[0]) if $_[0] },
+    default  => sub { URI->new('https://slack.com/api/oauth.access') },
+);
+
+=head2 scope
+
+Authorization scopes to request for this provider.
+
+=cut
+
+has scope => (
+    is       => 'ro',
+    #init_arg => undef,
+    coerce   => sub { my $x = shift; ref $x ? $x : [split /\s+/, $x] if $x },
+    default  => sub { [qw(team.read)] },
+);
+
+# consume the roles after we define these attributes since `has` is a
+# thing that runs at ordinary runtime.
+with qw(App::OAuth::Authenticator::Provider App::OAuth::Authenticator::OAuth2);
+
+=head2 resolve_principal $TOKEN
+
+=cut
+
+sub resolve_principal {
+}
 
 # need the `team.read` scope which only operates on `team.info`
 

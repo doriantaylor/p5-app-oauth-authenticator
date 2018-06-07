@@ -35,7 +35,7 @@ requires (
     'URI::QueryParam'       => '1.69',
     'JSON'                  => '2.90',
     'MIME::Base64'          => '3.14',
-    'UUID::Tiny'            => '1.04',
+    'UUID::URandom'         => '0.001',
     'Role::Markup::XML'     => '0.07',
     'DBIx::Class'           => '0.082821',
     'RDF::Trine'            => '1.018',
@@ -45,6 +45,7 @@ requires (
     'Config::Any'           => '0.26',
     'String::RewritePrefix' => '0.007',
     'Class::Load'           => '0.23',
+    'Params::Registry'      => '0.07',
 );
 
 install_as_cpan;
