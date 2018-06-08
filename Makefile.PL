@@ -33,6 +33,8 @@ requires (
     'Moo'                   => '2.003',
     'URI'                   => '1.69',
     'URI::QueryParam'       => '1.69',
+    'URI::ni'               => '0.05',
+    'URI::urn::uuid'        => '0.03',
     'JSON'                  => '2.90',
     'MIME::Base64'          => '3.14',
     'UUID::URandom'         => '0.001',
@@ -46,6 +48,8 @@ requires (
     'String::RewritePrefix' => '0.007',
     'Class::Load'           => '0.23',
     'Params::Registry'      => '0.07',
+    'Type::Tiny'            => '1.002002',
+    'Types::XSD'            => '0.005',
 );
 
 install_as_cpan;

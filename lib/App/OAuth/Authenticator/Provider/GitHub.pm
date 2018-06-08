@@ -95,19 +95,19 @@ sub resolve_principal {
 
 # try to get a principal out of the github user
 
-# first let's see if the damn account is in the graph
+# first let's see if the damn account is in the graph:
 
 # ?s (foaf:account|^sioc:account_of) ?account .
 
-# no? okay let's try email (only those verified by github)
+# no? okay let's try email (only those verified by github):
 
 # ?s foaf:mbox ?verified .
 
-# no? how about indirectly
+# no? how about indirectly:
 
 # ?s (foaf:account|^sioc:account_of)/sioc:email ?verified .
 
-# no? how about if the github page itself is listed in some way
+# no? how about if the github page itself is listed in some way:
 
 # ?s ?p ?html_url .
 
@@ -115,7 +115,7 @@ sub resolve_principal {
 
 # ?s (foaf:page|foaf:homepage|foaf:weblog) ?blog .
 
-# still no? how about the name i guess
+# still no? how about the name i guess:
 
 # ?s (foaf:name|foaf:nickname) ?n . FILTER (UCASE(str(?n)) = UCASE(?nick))
 
