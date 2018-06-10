@@ -13,14 +13,14 @@ people via OAuth(2) against an existing database. In other words, we
 use information found in th API responses of the user's chosen
 provider to match them against a set of known people and facts about
 them. If a principal (a conventional term for "entity that accesses a
-computer system") is successfully found, the system associates that
-principal with an ordinary HTTP cookie, which is subsequently
-retrieved through an authentication handler, which itself sets the Web
-server request object's `r->user` field, and thus the `REMOTE_USER`
-environment variable, with the identifier of the principal. This can
-be subsequently used in authorization handlers and likewise in the
-application layer, providing a vendor-neutral—and even
-protocol-neutral—interface for access control on the Web.
+computer system") is found, the system associates that principal with
+an ordinary HTTP cookie, which is subsequently retrieved through an
+authentication handler. The handler uses the cookie to look up the
+principal, and sets the Web server request object's `r->user` field,
+and thus the `REMOTE_USER` environment variable, with the principal's
+identifier. This can be used subsequently in authorization handlers
+and likewise in the application layer, providing a vendor-neutral—and
+even protocol-neutral—interface for access control on the Web.
 
 The ultimate goal of this module is therefore to demonstrate a second
 natural cleavage plane in Web development: We know about separating

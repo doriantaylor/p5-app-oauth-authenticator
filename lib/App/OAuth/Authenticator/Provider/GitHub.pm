@@ -106,10 +106,14 @@ sub resolve_principal {
     # account, but we do not presume that the principal is part of the
     # group.
 
-
+    # note as well that the kind of intel available to gather is going
+    # to depend on the provider. github and slack, for instance, have
+    # concepts of groups and/or organizations, where twitter, for
+    # instance, does not.
 
     # do whatever provider-specific thing is necessary here to resolve
     # the principal:
+
     my $principal;
 
     # these calls either return objects or raise exceptions
