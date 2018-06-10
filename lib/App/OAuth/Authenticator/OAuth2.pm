@@ -9,7 +9,7 @@ use warnings FATAL => 'all';
 
 use Net::OAuth2::AccessToken;
 use Net::OAuth2::Profile::WebServer;
-use Throwable::Error;
+use App::OAuth::Authenticator::Error;
 
 use Moo::Role;
 
@@ -50,6 +50,22 @@ sub _wrap_auth_uri {
     $self->ua->authorize(@_);
 }
 
+# this is to normalize something that will return an HTTP::Response
+sub _proxy_request {
+    my ($self, $p) = @_;
+
+    my $s = $self->get_session(token => $p->{token});
+
+    $s->request($p->{request} || @{$p}{qw(method uri headers body)});
+}
+
+# this is because Net::OAuth2 is a silly, silly thing
+sub _just_the_token {
+    my ($self, $code) = @_;
+    my $misnomer = $self->ua->get_access_token($code);
+    $misnomer->access_token;
+}
+
 =head2 get_session %PARAMS
 
 Obtain an object that is suitable for making API calls. Keys not on
@@ -61,8 +77,8 @@ constructor. Note these keys are mutually exclusive:
 =item code
 
 Given a C<code> emanating from an OAuth 2 authorization response, this
-method will attempt to acquire an access token. This version of
-the method call may raise an exception if the authentication fails.
+method will attempt to acquire an access token. This version of the
+method call may raise an exception if the authentication fails.
 
 =item token
 
@@ -94,7 +110,7 @@ sub get_session {
         );
     }
     else {
-        Throwable::Error->throw(
+        App::OAuth::Authenticator::Error->throw(
             'Need either an access token, or a code with which to obtain one.');
     }
 }

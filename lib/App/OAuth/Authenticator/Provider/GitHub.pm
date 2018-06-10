@@ -6,6 +6,10 @@ use warnings FATAL => 'all';
 use Moo;
 use Try::Tiny;
 
+# i would just embed this but ->import doesn't work like use does
+use App::OAuth::Authenticator::Types::GitHub
+    qw(GitHubUser GitHubEmails GitHubOrgs);
+
 use constant HDR => [[Accept => 'application/vnd.github.v3+json']];
 
 # The following attributes are hard-coded from last-known values, but
@@ -69,26 +73,46 @@ sub resolve_principal {
     my ($self, $token, $rules) = @_;
 
     # obtain a session with the token
-    my $session = $self->get_session(token => $token);
+    #my $session = $self->get_session(token => $token);
 
     # do whatever API-specific thing is necessary here to resolve the
     # principal:
     my $principal;
 
-    # these are just regular HTTP::Response objects coming out of this thing
-    my $call = $session->get('https://api.github.com/user', HDR);
-    if ($call->is_success and $call->content_type =~ /json/i) {
-        # basic user info
-        my $struct = $self->json->decode($call->content);
+    # these calls either return objects or raise exceptions
 
-        #if $struct->{}
-    }
-    else {
-        # do something like blow up with the error response
-    }
+    my $user = $self->api_request(
+        token   => $token,
+        uri     => 'https://api.github.com/user',
+        spec    => GitHubUser,
+        headers => HDR,
+    );
 
-    # save the token
-    $self->app->state->token_for($principal, $token);
+    warn "look ma: " . Data::Dumper::Dumper($user);
+
+    # okay we got the user, try to match:
+
+    # * account address
+
+    # * 'blog' entry
+
+    my $email = $self->api_request(
+        token   => $token,
+        uri     => 'https://api.github.com/user/emails',
+        spec    => GitHubEmails,
+        headers => HDR,
+    );
+
+    warn "look ma: " . Data::Dumper::Dumper($email);
+
+    my $orgs = $self->api_request(
+        token   => $token,
+        uri     => $user->{organizations_url},
+        spec    => GitHubOrgs,
+        headers => HDR,
+    );
+
+    warn "look ma: " . Data::Dumper::Dumper($orgs);
 
     $principal;
 }

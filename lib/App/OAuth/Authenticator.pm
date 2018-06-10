@@ -8,6 +8,7 @@ use parent 'Plack::Component';
 
 use App::OAuth::Authenticator::Request;
 use App::OAuth::Authenticator::DBIC;
+use App::OAuth::Authenticator::Types qw(ResourceMap);
 
 use Try::Tiny;
 use Throwable::Error;
@@ -15,6 +16,7 @@ use Throwable::Error;
 use String::RewritePrefix ();
 use Class::Load           ();
 use Data::UUID::NCName    ();
+use MIME::Base64          ();
 
 use RDF::Trine;
 
@@ -76,6 +78,10 @@ has registry => (
                 },
                 {
                     name => 'target',
+                    max  => 1,
+                },
+                {
+                    name => 'code',
                     max  => 1,
                 },
             ],
@@ -142,17 +148,77 @@ has state => (
     },
 );
 
-=item session_key
+=item resources
+
+=over 4
+
+=item menu
+
+The relative path for the menu page. Defaults to nothing.
+
+=item validation
+
+The relative path for the validation page. Defaults to C<validate>.
+
+=back
 
 =cut
 
-has session_key => (
+my %RESOURCE_DEFAULTS = (menu => [''], validation => ['validate']);
+
+has resources => (
     is      => 'ro',
-    default => 'auth-token', # not an OAuth token. will this be confusing?
+    isa     => ResourceMap,
+    coerce  => 1,
+    default => sub { {%RESOURCE_DEFAULTS} },
 );
+
+has _resource_rev => (
+    is       => 'ro',
+    init_arg => undef,
+    default  => sub { [] },
+);
+
+
+=item cookie
+
+The authentication cookie key. Defaults to C<authenticator>.
+
+=cut
+
+has cookie => (
+    is      => 'ro',
+    default => 'authenticator',
+);
+
 
 sub BUILD {
     my $self = shift;
+
+    # deal with resources
+
+    %{$self->resources} = (%RESOURCE_DEFAULTS, %{$self->resources});
+
+    my %rev;
+    while (my ($k, $a) = each %{$self->resources}) {
+        for my $v (@$a) {
+            App::OAuth::Authenticator::Error::Config->throw(
+                object  => $self->resources,
+                message => "Duplicate path $v for $k") if defined $rev{$v};
+            $rev{$v} = $k;
+        }
+    }
+
+    # sort from longest path to shortest
+    # clip off the front of the uri path if it matches
+    # split off the rest into e.g. target parameter
+    # dispatch the call
+    for my $k (sort { (length($b) <=> length($a)) || $a cmp $b } keys %rev) {
+        my $nk = join '/+', '', map { quotemeta($_) } split /\/+/, $k;
+        my $re = qr/^$nk(?:\/+(.*?))?$/;
+
+        push @{$self->_resource_rev}, [$re, $rev{$k}];
+    }
 
     # deal with providers
     my $p = $self->provider;
@@ -176,6 +242,9 @@ sub BUILD {
         # set the reverse value
         $self->_provider_rev->{$v->state} = $v;
     }
+
+    #require Data::Dumper;
+    #warn Data::Dumper::Dumper($self->_provider_rev);
 }
 
 =head2 configure $FILE
@@ -258,14 +327,19 @@ sub menu {
     );
     $resp->body($doc);
 
-    my $confirm = $req->real_base;
-    #$confirm->path_segment
+    # generate the redirect uri
+    my $valid = URI->new_abs($self->resources->{validation}[0],
+                             $req->real_base);
+    if (defined(my $target = $req->instance->get('target'))) {
+        my @ps = $valid->path_segments;
+        $valid->path_segments(@ps, $target);
+    }
 
     # iterate over the providers to produce a list
     for my $provider (sort { $a->label cmp $b->label }
                           values %{$self->provider}) {
 
-        my $href = $provider->prepare_login_uri(redirect => $confirm);
+        my $href = $provider->prepare_login_uri(redirect => $valid);
 
         $self->_XML(
             parent => $root,
@@ -360,9 +434,21 @@ sub menu {
 # principal, so we would need some explicit UI and content to
 # carefully explain what the hell is going on.
 
+sub error_page {
+    my ($self, $message) = @_;
+    my $doc = $self->_DOC;
+    $self->_XHTML(
+        doc     => $doc,
+        title   => 'Handshake error',
+        content => $message,
+    );
+    $doc;
+}
+
 sub validate {
     my ($self, $req) = @_;
 
+    my $ins  = $req->instance;
     my $uri  = $req->uri;
     my $resp = $req->new_response(409);
 
@@ -371,14 +457,48 @@ sub validate {
     # right out of the gate. (may as well check for the existence of
     # `code` parameter here too.)
 
+    my $code  = $ins->get('code') or do {
+        my $doc = $self->error_page(
+            { -name => 'p', -content => [
+                'The required parameter ',
+                { -name => 'code', -content => 'code' },
+                ' is missing. This page was likely accessed outside ',
+                ' of the normal OAuth handshake process.'] });
+        $resp->body($doc);
+        return $resp;
+    };
+
+    my $state = $ins->get('state') or do {
+        my $doc = $self->error_page(
+            { -name => 'p', -content => [
+                'The required parameter ',
+                { -name => 'code', -content => 'state' },
+                ' is missing. This page was likely accessed outside ',
+                ' of the normal OAuth handshake process.'] });
+        $resp->body($doc);
+        return $resp;
+    };
+
     # resolve the provider using the `state` parameter or return 409.
 
-    my $provider;
+    my $provider = $self->_provider_rev->{$state} or do {
+        my $doc = $self->error_page(
+            { -name => 'p', -content => [
+                'We could not match a provider to the state ',
+                { -name => 'samp', -content => $state },
+                '. This is either an error in the OAuth process, ',
+                'or this page has been accessed outside the normal flow.' ]});
+        $resp->body($doc);
+        return $resp;
+    };
 
     # before we validate the user, we check the redirect target, which
     # will be encoded as the terminal path segment using base64url.
 
-    my $target;
+    my $target = $ins->get('target');
+    if (defined $target and $target ne '') {
+        warn $target;
+    }
 
     # * if it isn't there, this is a 409. (or is it? do we want to
     #   have a default redirecton target?)
@@ -393,34 +513,59 @@ sub validate {
     # *now* we feed the `code` parameter into the oauth request, which
     # of course if we aren't given, is another 409 error.
 
+    # get the token or this is a 502
+    my $token;
+    try { $token = $provider->get_access_token($code) } catch {
+        $resp->code(502);
+        my $doc = $self->error_page({ -name => 'p', -content => [
+            'Dongs: ', $_->object,
+        ]});
+        $resp->body($doc);
+    };
+    return $resp if $resp->code == 502;
+
+    warn "got token $token";
+
     my $principal;
     try {
         # the call to the provider will either return the principal,
         # return nothing, or throw an exception.
 
-        #$principal = $provider->resolve_principal(token => $token);
+        $principal = $provider->resolve_principal($token);
     } catch {
         # the provider has failed in some technical way; return 5xx
+        $resp->code(502);
+        $resp->body('lol fail');
     };
+    return $resp if $resp->code >= 500;
 
     unless ($principal) {
         # 403, we see you but you aren't on the whitelist
 
         # here's a question: do we want to let people try another
         # provider?
+        $resp->code(403);
+
+        my $doc = $self->error_page({ -name => 'p', -content => [
+            'We found your account at ',
+            { -name => 'strong', -content => $provider->label },
+            ', but we couldn\'t associate it with any people we know about.',
+        ] });
+        $resp->body($doc);
+        return $resp;
     }
 
     # congratulations, you're in. mint up a new state record, set the
     # cookie and redirect to the target.
     my $cookie = $self->state->state_for($principal);
 
-    $resp->cookies->{$self->session_key} = {
+    $resp->cookies->{$self->cookie} = {
         value    => $cookie,
         httponly => 1,
 #        domain   => $derp,
     };
 
-    $resp->redirect($target, 303);
+    $resp->redirect($target, 303) if $target;
 
     $resp;
 }
@@ -439,6 +584,11 @@ sub principal_for {
 
 =cut
 
+my %DISPATCH = (
+    menu       => \&menu,
+    validation => \&validate,
+);
+
 sub call {
     my ($self, $req) = @_;
 
@@ -448,7 +598,19 @@ sub call {
 
     # dispatch based on request URI
 
-    $self->menu($req);
+    my $pi = $req->real_path_info || '/';
+    for my $pair (@{$self->_resource_rev}) {
+        my ($re, $dispatch) = @$pair;
+        next unless $pi =~ $re;
+        my $target = $1;
+        $req->instance->set(target => $target);
+        return $DISPATCH{$dispatch}->($self, $req);
+    }
+
+    my $resp = $req->new_response(504);
+    $resp->content_type('text/plain');
+    $resp->body("Gone off the rails, no dispatch for $pi");
+    $resp;
 }
 
 around call => sub {
@@ -457,11 +619,7 @@ around call => sub {
         ($env, $self->registry, path => [qw(action target)]);
     my $ins  = $req->instance;
 
-    if (my $pi = $req->real_path_info) {
-        my ($undef, @seg) = split m!/+!, $pi;
-        if (@seg) {
-        }
-    }
+    # don't stick application logic in here; this is strictly infrastructure
 
     # now run the original call
     my $resp = $orig->($self, $req);

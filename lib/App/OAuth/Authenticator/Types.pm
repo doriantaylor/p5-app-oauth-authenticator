@@ -4,18 +4,33 @@ use strict;
 use warnings FATAL => 'all';
 
 use URI;
+use HTTP::Headers;
 
 use Type::Library -base,
-    -declare => qw(MaybeBool MaybeToken URIRef MaybeURIRef Email MaybeEmail
-                   GitHubUser GitHubEmail GitHubOrg);
-use Types::Standard qw(slurpy Any Defined Maybe Optional
-                       Str Dict ArrayRef HashRef);
+    -declare => qw(Type TinyType MooseType MooseXType MooseXUndef
+                   NonEmptyStr NonEmptyToken MaybeBool MaybeToken TokenList
+                   URIRef MaybeURIRef Email MaybeEmail
+                   HTTPMethod HTTPHeaders HTTPRequest ResourceMap);
+use Types::Standard qw(slurpy Any Defined Value Maybe Optional
+                       Str Dict Enum ArrayRef HashRef);
 use Type::Utils -all;
 use Types::XSD  -all;
+
+class_type TinyType,    { class => 'Type::Tiny' };
+class_type MooseType,   { class => 'Moose::Meta::TypeConstraint' };
+class_type MooseXType,  { class => 'MooseX::Types::TypeDecorator' };
+class_type MooseXUndef, { class => 'MooseX::Types::UndefinedType' };
+
+declare Type, as TinyType|MooseType|MooseXType|MooseXUndef;
 
 coerce Boolean, from Defined, via { int $_ };
 subtype MaybeBool, as Maybe[Boolean];
 coerce MaybeBool, from Defined, via { int $_ };
+
+subtype NonEmptyStr, from Str, via { my $x = $_; $x =~ s/\s+//gsm; length $x };
+
+subtype NonEmptyToken, as Token, where { to_Token($_) ne '' };
+subtype MaybeToken, as Maybe[Token];
 
 sub _coerce_token {
     s/^\s*(.*?)\s*$/$1/sm;
@@ -23,12 +38,19 @@ sub _coerce_token {
     $_;
 }
 
-subtype MaybeToken, as Maybe[Token];
 coerce Token,      from Str, via \&_coerce_token;
 coerce MaybeToken, from Str, via \&_coerce_token;
 
 class_type URIRef, { class => 'URI' };
 subtype MaybeURIRef, as Maybe[URIRef];
+
+sub _coerce_uri {
+    $_ =~ s/^\s*(.*?)\s*$/$1/sm;
+    URI->new($_);
+}
+
+coerce MaybeURIRef, from NonEmptyStr, via \&_coerce_uri;
+coerce URIRef, from NonEmptyStr, via \&_coerce_uri;
 
 subtype Email, as URIRef,
     where { $_->can('scheme') and lc($_->scheme) eq 'mailto' };
@@ -40,73 +62,40 @@ sub _coerce_email {
     URI->new($em);
 }
 
-coerce Email,      from Defined, via \&_coerce_email;
-coerce MaybeEmail, from Defined, via \&_coerce_email;
+coerce Email,      from NonEmptyStr, via \&_coerce_email;
+coerce MaybeEmail, from NonEmptyStr, via \&_coerce_email;
 
-sub _coerce_uri {
-    $_ =~ s/^\s*(.*?)\s*$/$1/sm;
-    URI->new($_);
-}
+# XXX fine for now
+declare HTTPMethod, as Enum[qw(OPTIONS TRACE GET HEAD POST PUT DELETE)];
 
-coerce MaybeURIRef, from Defined, via \&_coerce_uri;
-#    via { $_ =~ s/^\s*(.*?)\s*$/$1/sm; URI->new($_) };
-coerce URIRef, from Defined, via \&_coerce_uri;
-#    via { $_ =~ s/^\s*(.*?)\s*$/$1/sm; URI->new($_) };
+class_type HTTPRequest, { class => 'HTTP::Request' };
+class_type HTTPHeaders, { class => 'HTTP::Headers' };
+coerce HTTPHeaders,
+    from HashRef, via { HTTP::Headers->new(%$_) },
+    from ArrayRef[ArrayRef], via {
+        my $a = shift;
+        my $h = HTTP::Headers->new;
+        for my $pair (@$a) {
+            my @v = @$pair;
+            my $k = shift @v;
+            if ($k and @v) {
+                $h->push_header($k, ref $v[0] ? $v[0] : \@v);
+            }
+        }
+        require Data::Dumper;
+        warn Data::Dumper::Dumper($h);
+        $h;
+    };
 
-declare GitHubUser, as Dict[
-    login               => Token,
-    id                  => PositiveInteger,
-    node_id             => Base64Binary,
-    avatar_url          => URIRef,
-    gravatar_id         => MaybeToken,
-    url                 => URIRef,
-    html_url            => URIRef,
-    followers_url       => URIRef,
-    following_url       => URIRef,
-    gists_url           => URIRef,
-    starred_url         => URIRef,
-    subscriptions_url   => URIRef,
-    organizations_url   => URIRef,
-    repos_url           => URIRef,
-    events_url          => URIRef,
-    received_events_url => URIRef,
-    type                => Token,
-    site_admin          => Boolean,
-    name                => Token,
-    company             => MaybeToken,
-    blog                => MaybeURIRef,
-    location            => MaybeToken,
-    email               => MaybeEmail,
-    hireable            => MaybeBool,
-    bio                 => Maybe[Str],
-    public_repos        => NonNegativeInteger,
-    public_gists        => NonNegativeInteger,
-    followers           => NonNegativeInteger,
-    following           => NonNegativeInteger,
-    created_at          => DateTime,
-    updated_at          => DateTime,
-    total_private_repos => Optional[NonNegativeInteger],
-    owned_private_repos => Optional[NonNegativeInteger],
-    private_gists       => Optional[NonNegativeInteger],
-    disk_usage          => Optional[NonNegativeInteger],
-    collaborators       => Optional[NonNegativeInteger],
-    two_factor_authentication => Optional[Boolean],
-    plan => Optional[Dict[
-        name          => Token,
-        space         => NonNegativeInteger,
-        private_repos => NonNegativeInteger,
-        collaborators => NonNegativeInteger,
-        slurpy HashRef]],
-    slurpy HashRef], coercion => 1;
+#my $tokens = declare as ArrayRef[Token];
+#coerce $tokens, from Value, via { [$_] };
+declare TokenList, as ArrayRef[Token];
+coerce TokenList, from Value, via { [$_] };
 
-declare GitHubEmail, as ArrayRef[Dict[
-    email      => Email,
-    verified   => Boolean,
-    primary    => Boolean,
-    visibility => Token,
-]], coercion => 1;
+declare ResourceMap, as Dict[
+    menu => Optional[TokenList], validation => Optional[TokenList],
+    slurpy Any], coercion => 1;
 
-declare GitHubOrg, as Dict[
-];
+__PACKAGE__->meta->make_immutable;
 
 1;

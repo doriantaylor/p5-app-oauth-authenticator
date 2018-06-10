@@ -7,9 +7,10 @@ require Data::Dumper;
 
 plan tests => 1;
 
-use_ok('App::OAuth::Authenticator::Types');
+use_ok('App::OAuth::Authenticator::Types::GitHub');
 
-eval { use App::OAuth::Authenticator::Types qw(GitHubUser GitHubEmail GitHubOrg) };
+eval { use App::OAuth::Authenticator::Types::GitHub
+           qw(GitHubUser GitHubEmail GitHubOrg) };
 
 my $user_public = JSON::decode_json(<<'USER');
 {
@@ -159,4 +160,38 @@ my $org = JSON::decode_json(<<'ORG');
 }
 ORG
 
-my $gho = GitHubOrg->assert_coerce($org);
+my $org_public = JSON::decode_json(<<'ORG');
+{
+  "login": "iainstitute",
+  "id": 1181008,
+  "node_id": "MDEyOk9yZ2FuaXphdGlvbjExODEwMDg=",
+  "url": "https://api.github.com/orgs/iainstitute",
+  "repos_url": "https://api.github.com/orgs/iainstitute/repos",
+  "events_url": "https://api.github.com/orgs/iainstitute/events",
+  "hooks_url": "https://api.github.com/orgs/iainstitute/hooks",
+  "issues_url": "https://api.github.com/orgs/iainstitute/issues",
+  "members_url": "https://api.github.com/orgs/iainstitute/members{/member}",
+  "public_members_url": "https://api.github.com/orgs/iainstitute/public_members{/member}",
+  "avatar_url": "https://avatars2.githubusercontent.com/u/1181008?v=4",
+  "description": null,
+  "name": "The Information Architecture Institute",
+  "company": null,
+  "blog": "http://iainstitute.org/",
+  "location": null,
+  "email": null,
+  "has_organization_projects": true,
+  "has_repository_projects": true,
+  "public_repos": 2,
+  "public_gists": 0,
+  "followers": 0,
+  "following": 0,
+  "html_url": "https://github.com/iainstitute",
+  "created_at": "2011-11-08T15:45:00Z",
+  "updated_at": "2016-02-27T01:05:08Z",
+  "type": "Organization"
+}
+ORG
+
+my $gho = GitHubOrg->assert_coerce($org_public);
+
+diag Data::Dumper::Dumper($gho);

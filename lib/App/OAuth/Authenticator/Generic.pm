@@ -3,6 +3,8 @@ package App::OAuth::Authenticator::Generic;
 use strict;
 use warnings FATAL => 'all';
 
+use Try::Tiny;
+
 =head1 NAME
 
 App::OAuth::Authenticator::Generic - Role common to OAuth 1 and 2
@@ -11,7 +13,7 @@ App::OAuth::Authenticator::Generic - Role common to OAuth 1 and 2
 
 use Moo::Role;
 
-requires qw(auth_uri token_uri scope ua);
+requires qw(auth_uri token_uri scope ua _wrap_auth_uri _just_the_token);
 
 =head1 ACCESSORS
 
@@ -56,6 +58,25 @@ sub prepare_login_uri {
     }
 
     $self->_wrap_auth_uri(%p);
+}
+
+=head2 get_access_token
+
+Wrapper method for implementation-specific token
+
+=cut
+
+sub get_access_token {
+    my ($self, $code) = @_;
+    my $out;
+    #$out = $self->_just_the_token($code);
+    try { $out = $self->_just_the_token($code) } catch {
+        # rethrow with sane object
+        my $obj = $_;
+        App::OAuth::Authenticator::Error::Server->throw
+              (object => $obj, message => 'Failed to get access token');
+    };
+    $out;
 }
 
 1;
