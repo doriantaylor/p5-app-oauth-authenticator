@@ -72,11 +72,44 @@ This method is intended to be called from the confirmation/validation target.
 sub resolve_principal {
     my ($self, $token, $rules) = @_;
 
-    # obtain a session with the token
-    #my $session = $self->get_session(token => $token);
+    # note that there are two moves here: one to identify the
+    # principal, and another to check whether the principal belongs to
+    # a given group (and only then if that's what the authorization
+    # rule says to do).
 
-    # do whatever API-specific thing is necessary here to resolve the
-    # principal:
+    # there is a high probability that the *account* is not in our
+    # database
+
+    # there is a distinct possibility that the *principal* is also not
+    # in our database
+
+    # authenticating the principal goes in this order:
+
+    # principal has github account X
+
+    # principal has email address X
+
+    # principal has blog/website address X (kind of degenerate)
+
+    # (we hope this only matches one principal)
+
+    # it may be useful to generate a new principal with information
+    # found in the API responses
+
+    # it also may be the case that the principal controls the account
+    # and the account is part of the group account, but the principal
+    # is not part of the group (even though we treat them like they
+    # are, for the purpose of authentication/authorization).
+
+    # so we can add the principal to the graph, add their account, and
+    # even add the fact that the account is part of the group's
+    # account, but we do not presume that the principal is part of the
+    # group.
+
+
+
+    # do whatever provider-specific thing is necessary here to resolve
+    # the principal:
     my $principal;
 
     # these calls either return objects or raise exceptions

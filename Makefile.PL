@@ -4,7 +4,7 @@ use warnings FATAL => 'all';
 use inc::Module::Install;
 
 name        'App-OAuth-Authenticator';
-readme_from 'lib/App/OAuth/Authenticator.pm';
+#readme_from 'lib/App/OAuth/Authenticator.pm';
 all_from    'lib/App/OAuth/Authenticator.pm';
 author      q{Dorian Taylor <dorian@cpan.org>};
 license     'apache';
